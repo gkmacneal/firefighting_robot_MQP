@@ -78,7 +78,7 @@ button_names = {
 }
 
 def controller():
-    joy_pub = rospy.Publisher('/joy', Joy, queue_size=10)
+    joy_pub = rospy.Publisher('/joy2', Joy, queue_size=10)
     rospy.init_node('joy_test')
     rate = rospy.Rate(100)
 

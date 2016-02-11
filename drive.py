@@ -27,22 +27,22 @@ def read_message(msg):
     right_trig = msg.axes[axes.index('right_trig')]
 
     # if this is the first packet time we see the right bumper pushed
-	# since the last time it was not pushed, change modes
-	if msg.buttons[buttons.index('rb')] == 1 and not mode_tog:
+    # since the last time it was not pushed, change modes
+    if msg.buttons[buttons.index('rb')] == 1 and not mode_tog:
         mode_tog = True
         mode += 1
         if mode >= num_modes:
             mode = 0
         print(modes[mode])
     # mark that the right bumper has been released
-	elif msg.buttons[buttons.index('rb')] == 0 and mode_tog:
-        mode_tog = False
+    elif msg.buttons[buttons.index('rb')] == 0 and mode_tog:
+            mode_tog = False
 
     twist = Twist()
 
     if mode == modes.index('tank'):
         twist.linear.x = (-right_vert - left_vert) / 2.
-        twist.angular.z = (-right_vert + left_vert) / 2.
+        twist.angular.z = (right_vert - left_vert) / 2.
     elif mode == modes.index('arcade'):
         twist.linear.x = -left_vert
         twist.angular.z = right_horz
@@ -55,8 +55,8 @@ def read_message(msg):
 if __name__ == '__main__':
     try:
         rospy.init_node('drive_node')
-        vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-        rospy.Subscriber('/joy', Joy, read_message, queue_size=10)
+        vel_pub = rospy.Publisher('/cmd_vel2', Twist, queue_size=10)
+        rospy.Subscriber('/joy2', Joy, read_message, queue_size=10)
         rospy.sleep(1)
         while(not rospy.is_shutdown()):
             pass
