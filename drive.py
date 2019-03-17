@@ -26,13 +26,16 @@ def read_message(msg):
     left_trig = msg.axes[axes.index('left_trig')]
     right_trig = msg.axes[axes.index('right_trig')]
 
-    if msg.buttons[buttons.index('rb')] == 1 and not mode_tog:
+    # if this is the first packet time we see the right bumper pushed
+	# since the last time it was not pushed, change modes
+	if msg.buttons[buttons.index('rb')] == 1 and not mode_tog:
         mode_tog = True
         mode += 1
         if mode >= num_modes:
             mode = 0
         print(modes[mode])
-    elif msg.buttons[buttons.index('rb')] == 0 and mode_tog:
+    # mark that the right bumper has been released
+	elif msg.buttons[buttons.index('rb')] == 0 and mode_tog:
         mode_tog = False
 
     twist = Twist()
