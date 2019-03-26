@@ -17,6 +17,8 @@
 #include <sensor_msgs/RelativeHumidity.h>
 #include <std_msgs/Int16MultiArray.h>
 
+#define THERMAL_SIZE 139
+
 // publisher declarations
 ros::NodeHandle nh;
 sensor_msgs::Range range_msg;
@@ -29,7 +31,7 @@ std_msgs::Int16MultiArray thermal_msg;
 std_msgs::MultiArrayLayout thermal_msg_layout;
 std_msgs::MultiArrayDimension thermal_msg_dim[1];
 std_msgs::MultiArrayDimension thermal_msg_row;
-int16_t thermal_data[64];
+int16_t thermal_data[THERMAL_SIZE];
 int j = 0;  // row counter
 ros::Publisher thermal_pub0("thermal_0i", &thermal_msg);
 ros::Publisher thermal_pub1("thermal_1i", &thermal_msg);
@@ -67,6 +69,7 @@ Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 #define BME 4
 #define RANGE 5
 
+
 // initialize ROS publishers and each sensor
 void setup() {
   // ros initializations
@@ -76,7 +79,7 @@ void setup() {
   nh.advertise(humid_pub);
   nh.advertise(thermal_pub0);
   nh.advertise(thermal_pub1);
-  //nh.advertise(thermal_pub2);
+  nh.advertise(thermal_pub2);
   nh.advertise(thermal_pub3);
 
   // I2C init
@@ -108,7 +111,7 @@ void setup() {
   // thermal inits
   MLX_init(THERMAL_0);
   MLX_init(THERMAL_1);
-  //MLX_init(THERMAL_2);
+  MLX_init(THERMAL_2);
   MLX_init(THERMAL_3);
 
   // init some constant data for ROS messages
@@ -117,8 +120,8 @@ void setup() {
   
   const char row[4] = "row";
   thermal_msg_row.label = row;
-  thermal_msg_row.size = 64;
-  thermal_msg_row.stride = 64;
+  thermal_msg_row.size = THERMAL_SIZE;
+  thermal_msg_row.stride = THERMAL_SIZE;
 
   thermal_msg_dim[0] = thermal_msg_row;
 
@@ -126,8 +129,7 @@ void setup() {
   thermal_msg_layout.dim_length = 1;
 
   thermal_msg.layout = thermal_msg_layout;
-  thermal_msg.data_length = 64;
-
+  thermal_msg.data_length = THERMAL_SIZE;
 }
 
 // repeatedly read from each sensor and publish to ROS
@@ -167,22 +169,22 @@ void loop() {
   range_pub.publish(&range_msg);
 
   // IR Array readings
-  j += 64;
-  if(j >= 768) j = 0;
+  j += THERMAL_SIZE;
+  if(j >= 834) j = 0;
   char buffer[7];
   nh.loginfo(itoa(j, buffer, 10));
-  thermal_msg_layout.data_offset = j;
   MLX_read(THERMAL_0, j);
+  thermal_msg_layout.data_offset = j;
+  thermal_msg.layout = thermal_msg_layout;
   thermal_pub0.publish(&thermal_msg);
   MLX_read(THERMAL_1, j);
   thermal_pub1.publish(&thermal_msg);
-  //MLX_read(THERMAL_2, j);
-  //thermal_pub2.publish(&thermal_msg);
+  MLX_read(THERMAL_2, j);
+  thermal_pub2.publish(&thermal_msg);
   MLX_read(THERMAL_3, j);
   thermal_pub3.publish(&thermal_msg);
 
   nh.spinOnce();
-  Serial.println("loop");
 }
 
 // initialize an MLX sensor
@@ -226,8 +228,8 @@ void MLX_read(int port, int start) {
 //      MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, mlx90640To);
 //    }
     
-  for(int i = start; i < 64+start; i++) {
-    thermal_data[i%64] = mlx90640Frame[i];
+  for(int i = start; i < THERMAL_SIZE+start; i++) {
+    thermal_data[i%THERMAL_SIZE] = mlx90640Frame[i];
   }
   thermal_msg.data = thermal_data;
   }

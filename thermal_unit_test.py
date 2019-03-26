@@ -3,17 +3,18 @@
 
 import rospy
 from std_msgs.msg import Int16MultiArray
-import numpy
+import numpy as np
+np.set_printoptions(threshold=np.inf)
 
-data = np.zeros((4, 834))
+data = np.zeros((4, 834), dtype=np.int16)
 
 def get_data(msg, args):
-	sensor = args[0]
+	sensor = args
 	offset = msg.layout.data_offset
-	size = msg.layout.dim.size
-	data[sensor][offset:offset+size-1] = msg.data
+	size = msg.layout.dim[0].size
+	data[sensor][offset:offset+size] = msg.data
 	print(data)
-	
+
 if __name__ == "__main__":
 	try:
 		rospy.init_node('thermal_unit_test')
