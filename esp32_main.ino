@@ -15,7 +15,7 @@
 #include <sensor_msgs/Range.h>
 #include <sensor_msgs/Temperature.h>
 #include <sensor_msgs/RelativeHumidity.h>
-#include <std_msgs/Float32MultiArray.h>
+#include <std_msgs/Int16MultiArray.h>
 
 // publisher declarations
 ros::NodeHandle nh;
@@ -25,16 +25,16 @@ sensor_msgs::Temperature temp_msg;
 ros::Publisher temp_pub("intern_temp", &temp_msg);
 sensor_msgs::RelativeHumidity humid_msg;
 ros::Publisher humid_pub("intern_humidity", &humid_msg);
-std_msgs::Float32MultiArray thermal_msg;
+std_msgs::Int16MultiArray thermal_msg;
 std_msgs::MultiArrayLayout thermal_msg_layout;
 std_msgs::MultiArrayDimension thermal_msg_dim[1];
 std_msgs::MultiArrayDimension thermal_msg_row;
-float thermal_data[32];
+int16_t thermal_data[64];
 int j = 0;  // row counter
-ros::Publisher thermal_pub0("thermal_0", &thermal_msg);
-ros::Publisher thermal_pub1("thermal_1", &thermal_msg);
-ros::Publisher thermal_pub2("thermal_2", &thermal_msg);
-ros::Publisher thermal_pub3("thermal_3", &thermal_msg);
+ros::Publisher thermal_pub0("thermal_0i", &thermal_msg);
+ros::Publisher thermal_pub1("thermal_1i", &thermal_msg);
+ros::Publisher thermal_pub2("thermal_2i", &thermal_msg);
+ros::Publisher thermal_pub3("thermal_3i", &thermal_msg);
 
 // I2C lib
 #include <Wire.h>
@@ -76,16 +76,17 @@ void setup() {
   nh.advertise(humid_pub);
   nh.advertise(thermal_pub0);
   nh.advertise(thermal_pub1);
-  nh.advertise(thermal_pub2);
+  //nh.advertise(thermal_pub2);
   nh.advertise(thermal_pub3);
 
   // I2C init
   Wire.begin();
-
+  Serial.begin(57600);
   // BME init
   tcaselect(BME);
   if (!bme.begin()) {
     // could not find BME
+    Serial.println("Failed to connect to BME");
     while (1);
   }
 
@@ -100,13 +101,14 @@ void setup() {
   tcaselect(RANGE);
   if (!lox.begin()) {
     // could not find IR range
+    Serial.println("Failed to connect to IR Range");
     while (1);
   }
 
   // thermal inits
   MLX_init(THERMAL_0);
   MLX_init(THERMAL_1);
-  MLX_init(THERMAL_2);
+  //MLX_init(THERMAL_2);
   MLX_init(THERMAL_3);
 
   // init some constant data for ROS messages
@@ -115,8 +117,8 @@ void setup() {
   
   const char row[4] = "row";
   thermal_msg_row.label = row;
-  thermal_msg_row.size = 32;
-  thermal_msg_row.stride = 32;
+  thermal_msg_row.size = 64;
+  thermal_msg_row.stride = 64;
 
   thermal_msg_dim[0] = thermal_msg_row;
 
@@ -124,7 +126,7 @@ void setup() {
   thermal_msg_layout.dim_length = 1;
 
   thermal_msg.layout = thermal_msg_layout;
-  thermal_msg.data_length = 32;
+  thermal_msg.data_length = 64;
 
 }
 
@@ -165,7 +167,7 @@ void loop() {
   range_pub.publish(&range_msg);
 
   // IR Array readings
-  j += 24;
+  j += 64;
   if(j >= 768) j = 0;
   char buffer[7];
   nh.loginfo(itoa(j, buffer, 10));
@@ -174,12 +176,13 @@ void loop() {
   thermal_pub0.publish(&thermal_msg);
   MLX_read(THERMAL_1, j);
   thermal_pub1.publish(&thermal_msg);
-  MLX_read(THERMAL_2, j);
-  thermal_pub2.publish(&thermal_msg);
+  //MLX_read(THERMAL_2, j);
+  //thermal_pub2.publish(&thermal_msg);
   MLX_read(THERMAL_3, j);
   thermal_pub3.publish(&thermal_msg);
 
   nh.spinOnce();
+  Serial.println("loop");
 }
 
 // initialize an MLX sensor
@@ -188,17 +191,21 @@ void MLX_init(int port) {
   if (isConnected() == false)
   {
     // sensor not detected
+    Serial.printf("Failed to connect to MLX %d\n", port);
     while (1);
   }
   int status;
   uint16_t eeMLX90640[832];
   status = MLX90640_DumpEE(MLX90640_address, eeMLX90640);
-  if (status != 0)
+  if (status != 0) {
+    Serial.printf("Failed to load params MLX %d\n", port);
     while (1); // failed to load system parameters
-
+  }
   status = MLX90640_ExtractParameters(eeMLX90640, &mlx90640);
-  if (status != 0)
+  if (status != 0) {
+    Serial.printf("Failed to extract params MLX %d\n", port);
     while (1); // failed to extract parameters
+  }
 }
 
 void MLX_read(int port, int start) {
@@ -208,21 +215,22 @@ void MLX_read(int port, int start) {
     uint16_t mlx90640Frame[834];
     
     int status = MLX90640_GetFrameData(MLX90640_address, mlx90640Frame);
-    if (status >= 0) {
-
-      float vdd = MLX90640_GetVdd(mlx90640Frame, &mlx90640);
-      float Ta = MLX90640_GetTa(mlx90640Frame, &mlx90640);
-
-      float tr = Ta - TA_SHIFT; //Reflected temperature based on the sensor ambient temperature
-      float emissivity = 0.95;
-      
-      MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, mlx90640To);
-    }
-  }
-  for(int i = start; i < 32+start; i++) {
-    thermal_data[i%32] = mlx90640To[i];
+//    if (status >= 0) {
+//
+//      float vdd = MLX90640_GetVdd(mlx90640Frame, &mlx90640);
+//      float Ta = MLX90640_GetTa(mlx90640Frame, &mlx90640);
+//
+//      float tr = Ta - TA_SHIFT; //Reflected temperature based on the sensor ambient temperature
+//      float emissivity = 0.95;
+//      
+//      MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, mlx90640To);
+//    }
+    
+  for(int i = start; i < 64+start; i++) {
+    thermal_data[i%64] = mlx90640Frame[i];
   }
   thermal_msg.data = thermal_data;
+  }
 }
 
 //Returns true if the MLX90640 is detected on the I2C bus
