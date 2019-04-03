@@ -15,9 +15,9 @@
 #include <sensor_msgs/Range.h>
 #include <sensor_msgs/Temperature.h>
 #include <sensor_msgs/RelativeHumidity.h>
-#include <std_msgs/Int16MultiArray.h>
+#include <std_msgs/UInt8MultiArray.h>
 
-#define THERMAL_SIZE 139
+#define THERMAL_SIZE 384
 
 // publisher declarations
 ros::NodeHandle nh;
@@ -27,16 +27,15 @@ sensor_msgs::Temperature temp_msg;
 ros::Publisher temp_pub("intern_temp", &temp_msg);
 sensor_msgs::RelativeHumidity humid_msg;
 ros::Publisher humid_pub("intern_humidity", &humid_msg);
-std_msgs::Int16MultiArray thermal_msg;
+std_msgs::UInt8MultiArray thermal_msg;
 std_msgs::MultiArrayLayout thermal_msg_layout;
 std_msgs::MultiArrayDimension thermal_msg_dim[1];
 std_msgs::MultiArrayDimension thermal_msg_row;
-int16_t thermal_data[THERMAL_SIZE];
-int j = 0;  // row counter
-ros::Publisher thermal_pub0("thermal_0i", &thermal_msg);
-ros::Publisher thermal_pub1("thermal_1i", &thermal_msg);
-ros::Publisher thermal_pub2("thermal_2i", &thermal_msg);
-ros::Publisher thermal_pub3("thermal_3i", &thermal_msg);
+uint8_t thermal_data[THERMAL_SIZE];
+ros::Publisher thermal_pub0("thermal_0u", &thermal_msg);
+ros::Publisher thermal_pub1("thermal_1u", &thermal_msg);
+ros::Publisher thermal_pub2("thermal_2u", &thermal_msg);
+//ros::Publisher thermal_pub3("thermal_3u", &thermal_msg);
 
 // I2C lib
 #include <Wire.h>
@@ -48,7 +47,7 @@ ros::Publisher thermal_pub3("thermal_3i", &thermal_msg);
 const byte MLX90640_address = 0x33; //Default 7-bit unshifted address of the MLX90640
 #define TA_SHIFT 8 //Default shift for MLX90640 in open air
 static float mlx90640To[768];
-paramsMLX90640 mlx90640;
+paramsMLX90640 mlx90640[4];
 
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BME680.h"
@@ -74,13 +73,13 @@ Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 void setup() {
   // ros initializations
   nh.initNode();
-  nh.advertise(range_pub);
+  //nh.advertise(range_pub);
   nh.advertise(temp_pub);
   nh.advertise(humid_pub);
   nh.advertise(thermal_pub0);
   nh.advertise(thermal_pub1);
   nh.advertise(thermal_pub2);
-  nh.advertise(thermal_pub3);
+  //nh.advertise(thermal_pub3);
 
   // I2C init
   Wire.begin();
@@ -100,19 +99,19 @@ void setup() {
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
 
-  // range init
-  tcaselect(RANGE);
-  if (!lox.begin()) {
-    // could not find IR range
-    Serial.println("Failed to connect to IR Range");
-    while (1);
-  }
+//  // range init
+//  tcaselect(RANGE);
+//  if (!lox.begin()) {
+//    // could not find IR range
+//    Serial.println("Failed to connect to IR Range");
+//    while (1);
+//  }
 
   // thermal inits
   MLX_init(THERMAL_0);
   MLX_init(THERMAL_1);
   MLX_init(THERMAL_2);
-  MLX_init(THERMAL_3);
+  //MLX_init(THERMAL_3);
 
   // init some constant data for ROS messages
   temp_msg.variance = 1.0;
@@ -150,39 +149,84 @@ void loop() {
   humid_pub.publish(&humid_msg);
 
   // read from TOF sensor
-  VL53L0X_RangingMeasurementData_t measure;
+  //VL53L0X_RangingMeasurementData_t measure;
 
-  tcaselect(RANGE);
-  lox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
+  //tcaselect(RANGE);
+  //lox.rangingTest(&measure, false); // pass in 'true' to get debug data printout!
 
-  range_msg.header.stamp = nh.now();
-  range_msg.radiation_type = sensor_msgs::Range::INFRARED;
-  if (measure.RangeStatus != 4) {  // phase failures have incorrect data
-    int range_msr = measure.RangeMilliMeter;
-    range_msg.range = (float)range_msr;
-    range_msg.max_range = (float)measure.RangeDMaxMilliMeter;
-  } else {
-
-    range_msg.range = std::numeric_limits<float>::infinity();
-    range_msg.max_range = 0.0;
-  }
-  range_pub.publish(&range_msg);
+  //range_msg.header.stamp = nh.now();
+  //range_msg.radiation_type = sensor_msgs::Range::INFRARED;
+//  if (measure.RangeStatus != 4) {  // phase failures have incorrect data
+//    int range_msr = measure.RangeMilliMeter;
+//    range_msg.range = (float)range_msr;
+//    range_msg.max_range = (float)measure.RangeDMaxMilliMeter;
+//  } else {
+//
+//    range_msg.range = std::numeric_limits<float>::infinity();
+//    range_msg.max_range = 0.0;
+//  }
+//  range_pub.publish(&range_msg);
 
   // IR Array readings
-  j += THERMAL_SIZE;
-  if(j >= 834) j = 0;
-  char buffer[7];
-  nh.loginfo(itoa(j, buffer, 10));
-  MLX_read(THERMAL_0, j);
-  thermal_msg_layout.data_offset = j;
-  thermal_msg.layout = thermal_msg_layout;
+  MLX_read(THERMAL_0);
+  for(int j = 0; j < 768; j += THERMAL_SIZE) {
+    thermal_msg_layout.data_offset = j;
+    thermal_msg.layout = thermal_msg_layout;
+    for(int i = j; i < THERMAL_SIZE+j; i++) {
+      float temp = mlx90640To[i];
+      if (temp <= 25.0) {
+        temp = 25;
+      }
+      else if (temp >= 280.0) {
+        temp = 280;
+      }
+      temp -= 25;
+      uint8_t temp2 = static_cast<uint8_t>(temp);
+      thermal_data[i%THERMAL_SIZE] = temp2;
+    }
+  thermal_msg.data = thermal_data;
   thermal_pub0.publish(&thermal_msg);
-  MLX_read(THERMAL_1, j);
+  }
+  MLX_read(THERMAL_1);
+  for(int j = 0; j < 768; j += THERMAL_SIZE) {
+    thermal_msg_layout.data_offset = j;
+    thermal_msg.layout = thermal_msg_layout;
+    for(int i = j; i < THERMAL_SIZE+j; i++) {
+      float temp = mlx90640To[i];
+      if (temp <= 25.0) {
+        temp = 25;
+      }
+      else if (temp >= 280.0) {
+        temp = 280;
+      }
+      temp -= 25;
+      uint8_t temp2 = static_cast<uint8_t>(temp);
+      thermal_data[i%THERMAL_SIZE] = temp2;
+    }
+  thermal_msg.data = thermal_data;
   thermal_pub1.publish(&thermal_msg);
-  MLX_read(THERMAL_2, j);
+  }
+  MLX_read(THERMAL_2);
+  for(int j = 0; j < 768; j += THERMAL_SIZE) {
+    thermal_msg_layout.data_offset = j;
+    thermal_msg.layout = thermal_msg_layout;
+    for(int i = j; i < THERMAL_SIZE+j; i++) {
+      float temp = mlx90640To[i];
+      if (temp <= 25.0) {
+        temp = 25;
+      }
+      else if (temp >= 280.0) {
+        temp = 280;
+      }
+      temp -= 25;
+      uint8_t temp2 = static_cast<uint8_t>(temp);
+      thermal_data[i%THERMAL_SIZE] = temp2;
+    }
+  thermal_msg.data = thermal_data;
   thermal_pub2.publish(&thermal_msg);
-  MLX_read(THERMAL_3, j);
-  thermal_pub3.publish(&thermal_msg);
+  }
+  //MLX_read(THERMAL_3);
+  //thermal_pub3.publish(&thermal_msg);
 
   nh.spinOnce();
 }
@@ -203,35 +247,34 @@ void MLX_init(int port) {
     Serial.printf("Failed to load params MLX %d\n", port);
     while (1); // failed to load system parameters
   }
-  status = MLX90640_ExtractParameters(eeMLX90640, &mlx90640);
+  status = MLX90640_ExtractParameters(eeMLX90640, &mlx90640[port]);
   if (status != 0) {
     Serial.printf("Failed to extract params MLX %d\n", port);
     while (1); // failed to extract parameters
   }
+  //Serial.printf("gainEE: %d\n", mlx90640[port].gainEE);
+  //Serial.println("");
+  //Serial.printf("%d, %d, %d\n", mlx90640[port].offset[64], mlx90640[port].offset[357], mlx90640[port].offset[746]);
 }
 
-void MLX_read(int port, int start) {
+void MLX_read(int port) {
   tcaselect(port);
   for (byte x = 0 ; x < 2 ; x++) //Read both subpages
   {
     uint16_t mlx90640Frame[834];
     
     int status = MLX90640_GetFrameData(MLX90640_address, mlx90640Frame);
-//    if (status >= 0) {
-//
-//      float vdd = MLX90640_GetVdd(mlx90640Frame, &mlx90640);
-//      float Ta = MLX90640_GetTa(mlx90640Frame, &mlx90640);
-//
-//      float tr = Ta - TA_SHIFT; //Reflected temperature based on the sensor ambient temperature
-//      float emissivity = 0.95;
-//      
-//      MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, mlx90640To);
-//    }
-    
-  for(int i = start; i < THERMAL_SIZE+start; i++) {
-    thermal_data[i%THERMAL_SIZE] = mlx90640Frame[i];
-  }
-  thermal_msg.data = thermal_data;
+    if (status >= 0) {
+
+      float vdd = MLX90640_GetVdd(mlx90640Frame, &mlx90640[port]);
+      float Ta = MLX90640_GetTa(mlx90640Frame, &mlx90640[port]);
+
+      float tr = Ta - TA_SHIFT; //Reflected temperature based on the sensor ambient temperature
+      float emissivity = 0.95;
+      
+      MLX90640_CalculateTo(mlx90640Frame, &mlx90640[port], emissivity, tr, mlx90640To);
+    }
+  //Serial.printf("%d mode: %f\n", port, (mlx90640Frame[832] & 0x1000) >> 5);
   }
 }
 
