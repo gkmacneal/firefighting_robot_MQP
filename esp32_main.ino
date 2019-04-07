@@ -2,9 +2,10 @@
    code to publish sensor data from ESP32 to Raspberry Pi via ROS
    Hardware to pull data from:
    TCA9548A I2C Multiplexer
-   4x MLX90640 IR Array
+   3x MLX90640 IR Array
    BME680 Humidity Sensor
    VL53L0X IR Range Finder
+   BNO055 Inertial Measurement Unit
 */
 
 #include <limits>
@@ -15,6 +16,7 @@
 #include <sensor_msgs/Range.h>
 #include <sensor_msgs/Temperature.h>
 #include <sensor_msgs/RelativeHumidity.h>
+#include <sensor_msgs/Imu.h>
 #include <std_msgs/UInt8MultiArray.h>
 
 #define THERMAL_SIZE 384
@@ -25,8 +27,11 @@ sensor_msgs::Range range_msg;
 ros::Publisher range_pub("range", &range_msg);
 sensor_msgs::Temperature temp_msg;
 ros::Publisher temp_pub("intern_temp", &temp_msg);
+ros::Publisher imu_temp_pub("imu_temp", &temp_msg);
 sensor_msgs::RelativeHumidity humid_msg;
 ros::Publisher humid_pub("intern_humidity", &humid_msg);
+sensor_msgs::Imu imu_msg;
+ros::Publisher imu_pub("imu", &imu_msg);
 std_msgs::UInt8MultiArray thermal_msg;
 std_msgs::MultiArrayLayout thermal_msg_layout;
 std_msgs::MultiArrayDimension thermal_msg_dim[1];
@@ -35,7 +40,6 @@ uint8_t thermal_data[THERMAL_SIZE];
 ros::Publisher thermal_pub0("thermal_0u", &thermal_msg);
 ros::Publisher thermal_pub1("thermal_1u", &thermal_msg);
 ros::Publisher thermal_pub2("thermal_2u", &thermal_msg);
-//ros::Publisher thermal_pub3("thermal_3u", &thermal_msg);
 
 // I2C lib
 #include <Wire.h>
@@ -57,6 +61,10 @@ Adafruit_BME680 bme; // I2C
 #include "Adafruit_VL53L0X.h"
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 
+#include <Adafruit_BNO055.h>
+#include <utility/imumaths.h>
+Adafruit_BNO055 bno = Adafruit_BNO055();
+
 // multiplexer address
 #define TCAADDR 0x70
 
@@ -64,9 +72,8 @@ Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 #define THERMAL_0 0
 #define THERMAL_1 1
 #define THERMAL_2 2
-#define THERMAL_3 3
 #define BME 4
-#define RANGE 5
+#define BNO 5
 
 
 // initialize ROS publishers and each sensor
@@ -76,10 +83,11 @@ void setup() {
   //nh.advertise(range_pub);
   nh.advertise(temp_pub);
   nh.advertise(humid_pub);
+  nh.advertise(imu_temp_pub);
+  nh.advertise(imu_pub);
   nh.advertise(thermal_pub0);
   nh.advertise(thermal_pub1);
   nh.advertise(thermal_pub2);
-  //nh.advertise(thermal_pub3);
 
   // I2C init
   Wire.begin();
@@ -107,11 +115,22 @@ void setup() {
 //    while (1);
 //  }
 
+  // BNO init
+  tcaselect(BNO);
+  if(!bno.begin())
+  {
+    /* There was a problem detecting the BNO055 ... check your connections */
+    Serial.print("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+    while(1);
+  }
+  imu_msg.orientation_covariance[0] = -1;
+  imu_msg.angular_velocity_covariance[0] = -1;
+  imu_msg.linear_acceleration_covariance[0] = -1;
+
   // thermal inits
   MLX_init(THERMAL_0);
   MLX_init(THERMAL_1);
   MLX_init(THERMAL_2);
-  //MLX_init(THERMAL_3);
 
   // init some constant data for ROS messages
   temp_msg.variance = 1.0;
@@ -129,6 +148,7 @@ void setup() {
 
   thermal_msg.layout = thermal_msg_layout;
   thermal_msg.data_length = THERMAL_SIZE;
+  Serial.println("all sensors connected");
 }
 
 // repeatedly read from each sensor and publish to ROS
@@ -166,6 +186,32 @@ void loop() {
 //    range_msg.max_range = 0.0;
 //  }
 //  range_pub.publish(&range_msg);
+
+  // BNO Readings
+  int8_t imu_temp = bno.getTemp();
+  temp_msg.header.stamp = nh.now();
+  temp_msg.temperature = static_cast<double>(imu_temp);
+  imu_temp_pub.publish(&temp_msg);
+
+  imu_msg.header.stamp = nh.now();
+  
+  imu::Quaternion quat = bno.getQuat();
+  imu_msg.orientation.x = static_cast<double>(quat.x());
+  imu_msg.orientation.y = static_cast<double>(quat.y());
+  imu_msg.orientation.z = static_cast<double>(quat.z());
+  imu_msg.orientation.w = static_cast<double>(quat.w());
+
+  imu::Vector<3> angular = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+  imu_msg.angular_velocity.x = static_cast<double>(angular.x());
+  imu_msg.angular_velocity.y = static_cast<double>(angular.y());
+  imu_msg.angular_velocity.z = static_cast<double>(angular.z());
+  
+  imu::Vector<3> accel = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
+  imu_msg.linear_acceleration.x = static_cast<double>(accel.x());
+  imu_msg.linear_acceleration.y = static_cast<double>(accel.y());
+  imu_msg.linear_acceleration.z = static_cast<double>(accel.z());
+
+  imu_pub.publish(&imu_msg);
 
   // IR Array readings
   MLX_read(THERMAL_0);
@@ -225,8 +271,6 @@ void loop() {
   thermal_msg.data = thermal_data;
   thermal_pub2.publish(&thermal_msg);
   }
-  //MLX_read(THERMAL_3);
-  //thermal_pub3.publish(&thermal_msg);
 
   nh.spinOnce();
 }
