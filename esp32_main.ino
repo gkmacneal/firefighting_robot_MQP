@@ -27,7 +27,6 @@ sensor_msgs::Range range_msg;
 ros::Publisher range_pub("range", &range_msg);
 sensor_msgs::Temperature temp_msg;
 ros::Publisher temp_pub("intern_temp", &temp_msg);
-ros::Publisher imu_temp_pub("imu_temp", &temp_msg);
 sensor_msgs::RelativeHumidity humid_msg;
 ros::Publisher humid_pub("intern_humidity", &humid_msg);
 sensor_msgs::Imu imu_msg;
@@ -83,7 +82,6 @@ void setup() {
   //nh.advertise(range_pub);
   nh.advertise(temp_pub);
   nh.advertise(humid_pub);
-  nh.advertise(imu_temp_pub);
   nh.advertise(imu_pub);
   nh.advertise(thermal_pub0);
   nh.advertise(thermal_pub1);
@@ -188,10 +186,6 @@ void loop() {
 //  range_pub.publish(&range_msg);
 
   // BNO Readings
-  int8_t imu_temp = bno.getTemp();
-  temp_msg.header.stamp = nh.now();
-  temp_msg.temperature = static_cast<double>(imu_temp);
-  imu_temp_pub.publish(&temp_msg);
 
   imu_msg.header.stamp = nh.now();
   
